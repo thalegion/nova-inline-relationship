@@ -66,6 +66,6 @@ class RelationshipRule implements Rule
      */
     public function message()
     {
-        return $this->response;
+        return (string) $this->response;
     }
 }

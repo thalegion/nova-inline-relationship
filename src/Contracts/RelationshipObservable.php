@@ -3,6 +3,7 @@
 namespace KirschbaumDevelopment\NovaInlineRelationship\Contracts;
 
 use Illuminate\Database\Eloquent\Model;
+use KirschbaumDevelopment\NovaInlineRelationship\Dto\RelationObservableDto;
 
 interface RelationshipObservable
 {
@@ -15,7 +16,7 @@ interface RelationshipObservable
      *
      * @return mixed
      */
-    public function updating(Model $model, $attribute, $value);
+    public function updating(Model $model, $attribute, RelationObservableDto $value);
 
     /**
      * Handle creating event for the relationship
@@ -26,7 +27,7 @@ interface RelationshipObservable
      *
      * @return mixed
      */
-    public function creating(Model $model, $attribute, $value);
+    public function creating(Model $model, $attribute, RelationObservableDto $value);
 
     /**
      * Handle created event for the relationship
@@ -37,5 +38,5 @@ interface RelationshipObservable
      *
      * @return mixed
      */
-    public function created(Model $model, $attribute, $value);
+    public function created(Model $model, $attribute, RelationObservableDto $value);
 }

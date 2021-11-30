@@ -2,6 +2,10 @@
 
 namespace KirschbaumDevelopment\NovaInlineRelationship;
 
+use App\Containers\ContentSection\StoryContent\Models\StoryContent;
+use Ebess\AdvancedNovaMediaLibrary\Fields\Media;
+use Illuminate\Validation\ValidationException;
+use KirschbaumDevelopment\NovaInlineRelationship\Dto\RelationObservableDto;
 use stdClass;
 use Carbon\Carbon;
 use App\Nova\Resource;
@@ -322,10 +326,14 @@ class NovaInlineRelationship extends Field
         $attrs = ['name' => $attrib, 'attribute' => $attrib];
 
         /** @var Field $class */
-        $class = app($item['component'], $attrs);
+        $class = $item['field'];
 
-        if (isset($value) && is_callable($class->resolveCallback)) {
-            $value = call_user_func($class->resolveCallback, $value, $resource, $attrib);
+        if (is_callable($class->resolveCallback)) {
+            $resolvedValue = call_user_func($class->resolveCallback, $value, $resource, $attrib);
+
+            if ($resolvedValue) {
+                $value = $resolvedValue;
+            }
         }
 
         $class->value = $value !== null ? $value : '';
@@ -366,10 +374,42 @@ class NovaInlineRelationship extends Field
 
             $properties = $this->getPropertiesFromResource($model, $attribute);
 
-            $modResponse = $this->getResourceResponse($request, $response, $properties);
+            $observableData = new RelationObservableDto($this->getResourceResponse($request, $response, $properties), []);
+
+            $resource = new $this->resourceClass(new $this->resourceClass::$model());
+            $fields = $resource->availableFields($request);
+            $baseMediaRequest = NovaRequest::createFrom($request);
+            $callbacks = [];
+
+            $fields->each(function ($field) use ($request, $requestAttribute, &$callbacks, $baseMediaRequest, $observableData) {
+                if (!$field instanceof Media) {
+                    return;
+                }
+
+                foreach ($observableData->items as $itemKey => $item) {
+                    $itemMedias = $request['__media__.'.$requestAttribute.'.'.$itemKey.'.'.$field->attribute] ?? [];
+
+                    $baseMediaRequest->merge(['__media__' => [$field->attribute => $itemMedias]]);
+
+                    try {
+                        $callbacks[] = $field->fill($baseMediaRequest, $item);
+                    } catch (ValidationException $exception) {
+                        $newMessages = [];
+                        $messageBag = $exception->validator->getMessageBag();
+
+                        foreach ($exception->validator->getMessageBag()->getMessages() as $messageKey => $message) {
+                            $messageBag->add($requestAttribute, json_encode([$requestAttribute.'.'.$itemKey.'.'.$messageKey => $message]));
+                        }
+
+                        throw $exception;
+                    }
+                }
+            });
+
+            $observableData->callbacks = $callbacks;
 
             if ($model instanceof Model) {
-                $this->setModelAttributeValue($model, $attribute, $modResponse);
+                $this->setModelAttributeValue($model, $attribute, $observableData);
             }
         }
     }
@@ -403,19 +443,22 @@ class NovaInlineRelationship extends Field
         $messageArray = [];
         $attribArray = [];
 
-        $properties->each(function ($child, $childAttribute) use ($attribute, &$ruleArray, &$messageArray, &$attribArray) {
-            if (! empty($child['rules'])) {
-                $name = "{$attribute}.*.{$childAttribute}";
-                $ruleArray[$name] = $child['rules'];
-                $attribArray[$name] = $child['label'] ?? $childAttribute;
+        $request = app(NovaRequest::class);
+        $resource = new $this->resourceClass(new $this->resourceClass::$model);
+        $resourceRules = [];
 
-                if (! empty($child['messages']) && is_array($child['messages'])) {
-                    foreach ($child['messages'] as $rule => $message) {
-                        $messageArray["{$name}.{$rule}"] = $message;
-                    }
-                }
-            }
-        });
+        if ($request->isCreateOrAttachRequest()) {
+            $resourceRules = $resource::rulesForCreation($request);
+        } elseif ($request->isUpdateOrUpdateAttachedRequest()) {
+            $resourceRules = $resource::rulesForUpdate($request);
+        }
+
+        foreach ($resourceRules as $field => $rules)
+        {
+            $name = "{$attribute}.*.values.{$field}";
+            $ruleArray[$name] = $rules;
+            $attribArray[$name] = '';
+        }
 
         return new RelationshipRule($ruleArray, $messageArray, $attribArray);
     }
@@ -472,10 +515,10 @@ class NovaInlineRelationship extends Field
     {
         return $fields->map(function ($value) {
             return [
+                'field' => $value,
                 'component' => get_class($value),
                 'label' => $value->name,
                 'options' => $value->meta,
-                'rules' => $value->rules,
                 'attribute' => $value->attribute,
             ];
         });
@@ -495,11 +538,9 @@ class NovaInlineRelationship extends Field
         }
 
         $this->value = $this->value->map(function ($items) use ($properties) {
-            return collect($items)
+            return collect($properties)
                 ->map(function ($value, $key) use ($properties, $items) {
-                    return $properties->has($key)
-                        ? $this->setMetaFromClass($properties->get($key), $key, $items->{$key} ?? $value)
-                        : null;
+                    return $this->setMetaFromClass($value, $key, $items->{$key}, $items);
                 })
                 ->filter();
         });
@@ -512,11 +553,11 @@ class NovaInlineRelationship extends Field
      * @param $response
      * @param Collection $properties
      *
-     * @return array
+     * @return Model[]
      */
     protected function getResourceResponse(NovaRequest $request, $response, Collection $properties): array
     {
-        return collect($response)->map(function ($itemData, $weight) use ($properties, $request) {
+        return collect($response)->mapWithKeys(function ($itemData, $weight) use ($properties, $request) {
             $item = $itemData['values'];
             $modelId = $itemData['modelId'];
 
@@ -538,10 +579,18 @@ class NovaInlineRelationship extends Field
                 $fields[$this->sortUsing] = $weight;
             }
 
-            return [
-                'fields' => $fields,
-                'modelId' => $modelId,
-            ];
+            $modelClass = $this->resourceClass::$model;
+
+            if ($modelId) {
+                /** @var StoryContent $model */
+                $model = $modelClass::find($modelId);
+                $model->fill($fields);
+            } else {
+                $modelObj = new $modelClass();
+                $model = $modelObj->newInstance($fields);
+            }
+
+            return [$weight => $model];
         })->all();
     }
 
@@ -552,7 +601,7 @@ class NovaInlineRelationship extends Field
      * @param $attribute
      * @param array $value
      */
-    protected function setModelAttributeValue(Model $model, $attribute, array $value): void
+    protected function setModelAttributeValue(Model $model, $attribute, RelationObservableDto $value): void
     {
         $modelClass = get_class($model);
 
@@ -561,6 +610,6 @@ class NovaInlineRelationship extends Field
             $model->updated_at = Carbon::now();
         }
 
-        static::$observedModels[$modelClass][$attribute] = $this->isNullValue($value) ? null : $value;
+        static::$observedModels[$modelClass][$attribute] = $value;
     }
 }

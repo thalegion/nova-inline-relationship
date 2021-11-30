@@ -80,7 +80,7 @@
                                     'attribute': (this.value[attrib].meta.component === "file-field") ?
                                         attrib + '?' + this.id :
                                         this.field.attribute + '_' + this.id + '_' + attrib, // This is needed to enable delete link for file without triggering duplicate id warning
-                                    'name': this.value[attrib].meta.singularLabel,
+                                    'name': this.value[attrib].name,//this.field.attribute + '[' + this.id + '][' + attrib + ']',
                                     'deletable': this.modelId > 0, // Hide delete button if model Id is not present, i.e. new model
                                     'attrib': attrib
                                 }
@@ -120,6 +120,12 @@
             	formData.append(`${parentAttrib}[${this.id}][modelId]`, this.modelId);
                 this.getValueFromChildren().forEach(
                     (value, key) => {
+                        if (key.indexOf('__media__') !== -1) {
+                            formData.append(key.replace(/_(\d)+?_/, `][${this.id}][`), value);
+
+                            return;
+                        }
+
                         let keyParts = key.split('_');
 
                         if (keyParts.length === 1) {
@@ -129,8 +135,15 @@
 
                         let parentParts = parentAttrib.split('_');
                         let attrib = keyParts.slice(parentParts.length + 1).join('_');
+                        let subAttribIndex = attrib.indexOf('[');
+                        let subAttrib = '';
 
-                        formData.append(`${parentAttrib}[${this.id}][values][${attrib}]`, value);
+                        if (subAttribIndex !== -1) {
+                            subAttrib = attrib.slice(subAttribIndex);
+                            attrib = attrib.slice(0, subAttribIndex);
+                        }
+
+                        formData.append(`${parentAttrib}[${this.id}][values][${attrib}]${subAttrib}`, value);
                     }
                 );
             },

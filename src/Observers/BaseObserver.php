@@ -4,6 +4,7 @@ namespace KirschbaumDevelopment\NovaInlineRelationship\Observers;
 
 use Illuminate\Database\Eloquent\Model;
 use KirschbaumDevelopment\NovaInlineRelationship\Contracts\RelationshipObservable;
+use KirschbaumDevelopment\NovaInlineRelationship\Dto\RelationObservableDto;
 
 abstract class BaseObserver implements RelationshipObservable
 {
@@ -16,7 +17,7 @@ abstract class BaseObserver implements RelationshipObservable
      *
      * @return mixed
      */
-    public function updating(Model $model, $attribute, $value)
+    public function updating(Model $model, $attribute, RelationObservableDto $value)
     {
     }
 
@@ -29,7 +30,7 @@ abstract class BaseObserver implements RelationshipObservable
      *
      * @return mixed
      */
-    public function creating(Model $model, $attribute, $value)
+    public function creating(Model $model, $attribute, RelationObservableDto $value)
     {
     }
 
@@ -42,7 +43,7 @@ abstract class BaseObserver implements RelationshipObservable
      *
      * @return mixed
      */
-    public function created(Model $model, $attribute, $value)
+    public function created(Model $model, $attribute, RelationObservableDto $value)
     {
     }
 }

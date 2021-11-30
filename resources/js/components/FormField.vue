@@ -1,47 +1,47 @@
 <template>
-  <default-field
-    :field="field"
-    :errors="errors"
-    :show-errors="false"
-    :full-width-content="true"
-  >
-    <template slot="field">
-      <draggable
-        v-model="items"
-        handle=".relationship-item-handle"
-        :disabled="! field.sortable"
-        @start="drag=true"
-        @end="drag=false"
-      >
-        <relationship-form-item
-          v-for="(items, index) in items"
-          :ref="index"
-          :key="items.id"
-          :id="index"
-          :model-id="items.modelId"
-          :model-key="field.modelKey"
-          :value="items.fields"
-          :errors="errorList"
-          :field="field"
-          @deleted="removeItem(index)"
-        />
-      </draggable>
-      <div
-        v-if="!field.singular || !items.length"
-        class="bg-30 flex p-2 border-b border-40 rounded-lg"
-      >
-        <div class="w-full text-right">
-          <button
-            type="button"
-            class="btn btn-default bg-transparent hover:bg-primary text-primary hover:text-white border border-primary hover:border-transparent inline-flex items-center relative mr-3"
-            @click="addItem()"
-          >
-            Add new {{ field.singularLabel.toLowerCase() }}
-          </button>
-        </div>
-      </div>
-    </template>
-  </default-field>
+    <default-field
+        :field="field"
+        :errors="errors"
+        :show-errors="false"
+        :full-width-content="true"
+    >
+        <template slot="field">
+            <draggable
+                v-model="items"
+                handle=".relationship-item-handle"
+                :disabled="! field.sortable"
+                @start="drag=true"
+                @end="drag=false"
+            >
+                <relationship-form-item
+                    v-for="(items, index) in items"
+                    :ref="index"
+                    :key="items.id"
+                    :id="index"
+                    :model-id="items.modelId"
+                    :model-key="field.modelKey"
+                    :value="items.fields"
+                    :errors="errorList"
+                    :field="field"
+                    @deleted="removeItem(index)"
+                />
+            </draggable>
+            <div
+                v-if="!field.singular || !items.length"
+                class="bg-30 flex p-2 border-b border-40 rounded-lg"
+            >
+                <div class="w-full text-right">
+                    <button
+                        type="button"
+                        class="btn btn-default bg-transparent hover:bg-primary text-primary hover:text-white border border-primary hover:border-transparent inline-flex items-center relative mr-3"
+                        @click="addItem()"
+                    >
+                        Add new {{ field.singularLabel.toLowerCase() }}
+                    </button>
+                </div>
+            </div>
+        </template>
+    </default-field>
 </template>
 
 <script>
@@ -69,9 +69,9 @@ export default {
 
     watch: {
         errors: function (errors) {
-            let errObj = errors.errors.hasOwnProperty(this.field.attribute) ? errors.errors[this.field.attribute][0] : {};
+            let errObj = errors.errors.hasOwnProperty(this.field.attribute) ? JSON.parse(errors.errors[this.field.attribute][0]) : {};
             Object.keys(errObj).forEach(key=>{
-                errObj[key.replace(/\./g , '_')] = errObj[key];
+                errObj[key.replace('.values.', '.').replace(/\.(\d+)?\./g , '_$1_')] = errObj[key];
                 delete errObj[key];
             });
             this.errorList =  new Errors(errObj);
@@ -92,9 +92,9 @@ export default {
             this.items = Array.isArray(this.field.value) ? this.field.value : [];
             this.items = this.items.map((item, index) => {
                 return {
-                	'id': this.getNextId(),
-	                'modelId': this.field.models[index],
-	                'fields': item
+                    'id': this.getNextId(),
+                    'modelId': this.field.models[index],
+                    'fields': item
                 }
             });
 
@@ -104,9 +104,9 @@ export default {
 
             if(this.field.addChildAtStart && (this.items.length === 0)){
                 this.items.push({
-	                'id': this.getNextId(),
-	                'modelId': 0,
-	                'fields': {...this.field.settings}
+                    'id': this.getNextId(),
+                    'modelId': 0,
+                    'fields': {...this.field.settings}
                 });
             }
         },
@@ -125,9 +125,9 @@ export default {
         fillValueFromChildren: function(formData) {
             if(!_.isEmpty(this.$refs[0])){
                 _(this.$refs).each(item => {
-                      if(item && Array.isArray(item) && item[0]){
-                          item[0].fill(formData, this.field.attribute);
-                      }
+                    if(item && Array.isArray(item) && item[0]){
+                        item[0].fill(formData, this.field.attribute);
+                    }
                 });
             }else{
                 formData.append(this.field.attribute, []);
@@ -155,9 +155,9 @@ export default {
         addItem(){
             let value = [...this.items];
             value.push({
-	            'id': this.getNextId(),
-	            'modelId': 0,
-	            'fields': {...this.field.settings}
+                'id': this.getNextId(),
+                'modelId': 0,
+                'fields': {...this.field.settings}
             });
             this.handleChange(value);
         },

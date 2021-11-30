@@ -4,38 +4,43 @@ namespace KirschbaumDevelopment\NovaInlineRelationship\Observers;
 
 use Illuminate\Support\Arr;
 use Illuminate\Database\Eloquent\Model;
+use KirschbaumDevelopment\NovaInlineRelationship\Dto\RelationObservableDto;
 
 class HasManyObserver extends BaseObserver
 {
-    /**
-     * {@inheritdoc}
-     */
-    public function updating(Model $model, $attribute, $value)
+    public function updating(Model $model, $attribute, RelationObservableDto $value)
     {
         $model->{$attribute}()
-            ->whereNotIn('id', Arr::pluck($value, 'modelId'))
+            ->whereNotIn('id', Arr::pluck($value->items, 'id'))
             ->get()
             ->each
             ->delete();
 
-        for ($i = 0; $i < count($value); $i++) {
-            $childModel = $model->{$attribute}()->find($value[$i]['modelId']);
+        foreach ($value->items as $item) {
+            /** @var Model $childModel */
+            $childModel = $model->{$attribute}()->find($item->id);
 
-            if (empty($childModel)) {
-                $model->{$attribute}()->create($value[$i]['fields']);
-
-                continue;
-            }
-
-            $childModel->update($value[$i]['fields']);
+            $model->{$attribute}()->save($item);
         }
+
+        $this->runCallbacks($value);
     }
 
-    /**
-     * {@inheritdoc}
-     */
-    public function created(Model $model, $attribute, $value)
+    public function created(Model $model, $attribute, RelationObservableDto $value)
     {
-        $model->{$attribute}()->createMany(Arr::pluck($value, 'fields'));
+        foreach($value->items as $item) {
+            $model->{$attribute}()->save($item);
+        }
+
+        $this->runCallbacks($value);
+    }
+
+    private function runCallbacks(RelationObservableDto $value): void
+    {
+        if ($value->callbacks) {
+            foreach ($value->callbacks as $callback) {
+                call_user_func($callback);
+            }
+        }
     }
 }
