@@ -71,15 +71,19 @@
                 return _.keyBy(
                     Object.keys({ ...this.value }).map(
                         attrib => {
+                            let component = this.value[attrib].meta['translatable']
+                                ? this.value[attrib].meta['translatable']['original_component']
+                                : this.value[attrib].meta.component;
+
                             return {
                                 ...{
                                     'options': {}
                                 },
                                 ...this.value[attrib].meta,
                                 ...{
-                                    'attribute': (this.value[attrib].meta.component === "file-field") ?
-                                        attrib + '?' + this.id :
-                                        this.field.attribute + '_' + this.id + '_' + attrib, // This is needed to enable delete link for file without triggering duplicate id warning
+                                    'attribute': //(this.value[attrib].meta.component === "file-field" || this.value[attrib].meta.component === "morph-to-field") ?
+                                        component === 'advanced-media-library-field' ? attrib + '?' + this.id : attrib ,// + '?' + this.id ,//:
+                                        //this.field.attribute + '_' + this.id + '_' + attrib, // This is needed to enable delete link for file without triggering duplicate id warning
                                     'name': this.value[attrib].name,//this.field.attribute + '[' + this.id + '][' + attrib + ']',
                                     'deletable': this.modelId > 0, // Hide delete button if model Id is not present, i.e. new model
                                     'attrib': attrib
@@ -121,20 +125,18 @@
                 this.getValueFromChildren().forEach(
                     (value, key) => {
                         if (key.indexOf('__media__') !== -1) {
-                            formData.append(key.replace(/_(\d)+?_/, `][${this.id}][`), value);
+                            let modifiedKey = key
+                                .replace('__media__', '')
+                                .replace(/\?\d+?\]/, ']');
+                            formData.append(
+                                `__media__[${parentAttrib}][${this.id}]${modifiedKey}`,
+                                value
+                            );
 
                             return;
                         }
 
-                        let keyParts = key.split('_');
-
-                        if (keyParts.length === 1) {
-                            formData.append(`${parentAttrib}[${this.id}][values][${key}]`, value);
-                            return;
-                        }
-
-                        let parentParts = parentAttrib.split('_');
-                        let attrib = keyParts.slice(parentParts.length + 1).join('_');
+                        let attrib = key;
                         let subAttribIndex = attrib.indexOf('[');
                         let subAttrib = '';
 

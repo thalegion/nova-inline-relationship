@@ -91,8 +91,8 @@ class NovaInlineRelationship extends Field
     /**
      * Resolve the field's value for display.
      *
-     * @param  mixed  $resource
-     * @param  string|null  $attribute
+     * @param mixed $resource
+     * @param string|null $attribute
      *
      * @return void
      */
@@ -110,8 +110,8 @@ class NovaInlineRelationship extends Field
     /**
      * Resolve the field's value.
      *
-     * @param  mixed  $resource
-     * @param  string|null  $attribute
+     * @param mixed $resource
+     * @param string|null $attribute
      *
      * @return void
      */
@@ -147,8 +147,8 @@ class NovaInlineRelationship extends Field
     /**
      * Get Properties From Resource with Meta Information
      *
-     * @param  mixed  $resource
-     * @param  string  $attribute
+     * @param mixed $resource
+     * @param string $attribute
      *
      * @return Collection
      */
@@ -170,8 +170,8 @@ class NovaInlineRelationship extends Field
     /**
      * Get Properties From Resource with Meta Information
      *
-     * @param  mixed  $resource
-     * @param  string  $attribute
+     * @param mixed $resource
+     * @param string $attribute
      *
      * @return Collection
      */
@@ -216,7 +216,7 @@ class NovaInlineRelationship extends Field
      */
     public function isRelationshipDeletable(Model $model, $relation): bool
     {
-        return ! ($model->{$relation}() instanceof BelongsTo);
+        return !($model->{$relation}() instanceof BelongsTo);
     }
 
     /**
@@ -271,11 +271,11 @@ class NovaInlineRelationship extends Field
      */
     protected function resolveResourceFields($resource, $attribute, $properties)
     {
-        if (! empty($this->sortUsing) && $this->value instanceof Collection && $this->value->isNotEmpty()) {
+        if (!empty($this->sortUsing) && $this->value instanceof Collection && $this->value->isNotEmpty()) {
             $this->value = $this->value->sortBy($this->sortUsing)->values();
         }
 
-        $this->rules = [$this->getRelationshipRule($attribute, $properties)];
+        $this->rules = array_merge($this->rules, [$this->getRelationshipRule($attribute, $properties)]);
         $modelKey = optional($this->value)->first() ?? $resource->{$attribute}()->getRelated()->newInstance();
 
         $this->withMeta([
@@ -288,7 +288,7 @@ class NovaInlineRelationship extends Field
             'singular' => $this->isSingularRelationship($resource, $attribute),
             'deletable' => $this->isRelationshipDeletable($resource, $attribute),
             'addChildAtStart' => $this->requireChild,
-            'sortable' => ! empty($this->sortUsing),
+            'sortable' => !empty($this->sortUsing),
         ]);
 
         $this->updateFieldValue($resource, $attribute, $properties);
@@ -323,29 +323,40 @@ class NovaInlineRelationship extends Field
      */
     protected function setMetaFromClass(array $item, $attrib, $value = null, $resource = null)
     {
+        $request = app(NovaRequest::class);
         $attrs = ['name' => $attrib, 'attribute' => $attrib];
 
         /** @var Field $class */
         $class = $item['field'];
 
-        if (is_callable($class->resolveCallback)) {
-            $resolvedValue = call_user_func($class->resolveCallback, $value, $resource, $attrib);
+        if ($resource && ($request->isResourceDetailRequest() || $request->isResourceIndexRequest())) {
+            $class->resolveForDisplay($resource, $attrib);
+        } else {
+            if ($resource) {
+                $class->resolve($resource, $attrib);
+            } else {
+                if (is_callable($class->resolveCallback)) {
+                    $resolvedValue = call_user_func($class->resolveCallback, $value, $resource, $attrib);
 
-            if ($resolvedValue) {
-                $value = $resolvedValue;
+                    if ($resolvedValue) {
+                        $value = $resolvedValue;
+                    }
+                }
+
+                $class->value = $value !== null ? $value : '';
             }
         }
 
-        $class->value = $value !== null ? $value : '';
-
-        if (! empty($item['options']) && is_array($item['options'])) {
+        if (!empty($item['options']) && is_array($item['options'])) {
             $class->withMeta($item['options']);
         }
 
-        if (! empty($item['placeholder'])) {
-            $class->withMeta(['extraAttributes' => [
-                'placeholder' => $item['placeholder'],
-            ]]);
+        if (!empty($item['placeholder'])) {
+            $class->withMeta([
+                'extraAttributes' => [
+                    'placeholder' => $item['placeholder'],
+                ]
+            ]);
         }
 
         $item['meta'] = $class->jsonSerialize();
@@ -359,9 +370,9 @@ class NovaInlineRelationship extends Field
      * Hydrate the given attribute on the model based on the incoming request.
      *
      * @param NovaRequest $request
-     * @param  string  $requestAttribute
-     * @param  object  $model
-     * @param  string  $attribute
+     * @param string $requestAttribute
+     * @param object $model
+     * @param string $attribute
      *
      * @return mixed
      */
@@ -372,41 +383,70 @@ class NovaInlineRelationship extends Field
                 ? $request[$requestAttribute]
                 : json_decode($request[$requestAttribute], true);
 
-            $properties = $this->getPropertiesFromResource($model, $attribute);
-
-            $observableData = new RelationObservableDto($this->getResourceResponse($request, $response, $properties), []);
-
-            $resource = new $this->resourceClass(new $this->resourceClass::$model());
+            $observableData = new RelationObservableDto([], []);
+            $baseRequest = NovaRequest::createFrom($request);
+            $instance = new $this->resourceClass::$model();
+            $resource = Nova::newResourceFromModel($instance);
             $fields = $resource->availableFields($request);
-            $baseMediaRequest = NovaRequest::createFrom($request);
             $callbacks = [];
 
-            $fields->each(function ($field) use ($request, $requestAttribute, &$callbacks, $baseMediaRequest, $observableData) {
-                if (!$field instanceof Media) {
-                    return;
-                }
-
-                foreach ($observableData->items as $itemKey => $item) {
-                    $itemMedias = $request['__media__.'.$requestAttribute.'.'.$itemKey.'.'.$field->attribute] ?? [];
-
-                    $baseMediaRequest->merge(['__media__' => [$field->attribute => $itemMedias]]);
-
-                    try {
-                        $callbacks[] = $field->fill($baseMediaRequest, $item);
-                    } catch (ValidationException $exception) {
-                        $newMessages = [];
-                        $messageBag = $exception->validator->getMessageBag();
-
-                        foreach ($exception->validator->getMessageBag()->getMessages() as $messageKey => $message) {
-                            $messageBag->add($requestAttribute, json_encode([$requestAttribute.'.'.$itemKey.'.'.$messageKey => $message]));
-                        }
-
-                        throw $exception;
+            if ($response) {
+                foreach ($response as $order => $item) {
+                    if (!empty($this->sortUsing)) {
+                        $item['values'][$this->sortUsing] = $order;
                     }
-                }
-            });
 
-            $observableData->callbacks = $callbacks;
+                    if ($item['modelId']) {
+                        $relatedModel = $instance::find($item['modelId']);
+                        $relatedModel->fill($item['values']);
+                    } else {
+                        $relatedModel = $instance->newInstance($item['values']);
+                    }
+
+                    $observableData->items[] = $relatedModel;
+
+                    $baseRequest->replace($item['values']);
+
+                    $fields
+                        ->filter(fn($field) => !$field instanceof Media)
+                        ->each(function ($field) use ($baseRequest, $relatedModel, $observableData) {
+                            $result = $field->fill($baseRequest, $relatedModel);
+
+                            if (is_callable($result)) {
+                                $observableData->callbacks[] = $result;
+                            }
+                        });
+                }
+
+                $fields
+                    ->filter(fn($field) => $field instanceof Media)
+                    ->each(function ($field) use ($request, $requestAttribute, $baseRequest, $observableData) {
+                        foreach ($observableData->items as $itemKey => $item) {
+                            $itemMedias = $request['__media__.' . $requestAttribute . '.' . $itemKey . '.' . $field->attribute] ?? [];
+
+                            $baseRequest->replace(['__media__' => [$field->attribute => $itemMedias]]);
+
+                            try {
+                                $observableData->callbacks[] = $field->fill($baseRequest, $item);
+                            } catch (ValidationException $exception) {
+                                $newMessages = [];
+                                $messageBag = $exception->validator->getMessageBag();
+
+                                foreach (
+                                    $exception->validator->getMessageBag()->getMessages() as $messageKey => $message
+                                ) {
+                                    $messageBag->add(
+                                        $requestAttribute,
+                                        json_encode([$requestAttribute . '.' . $itemKey . '.' . $messageKey => $message]
+                                        )
+                                    );
+                                }
+
+                                throw $exception;
+                            }
+                        }
+                    });
+            }
 
             if ($model instanceof Model) {
                 $this->setModelAttributeValue($model, $attribute, $observableData);
@@ -453,30 +493,13 @@ class NovaInlineRelationship extends Field
             $resourceRules = $resource::rulesForUpdate($request);
         }
 
-        foreach ($resourceRules as $field => $rules)
-        {
+        foreach ($resourceRules as $field => $rules) {
             $name = "{$attribute}.*.values.{$field}";
             $ruleArray[$name] = $rules;
             $attribArray[$name] = '';
         }
 
         return new RelationshipRule($ruleArray, $messageArray, $attribArray);
-    }
-
-    /**
-     * Get Properties From Resource File
-     *
-     * @param $model
-     * @param $attribute
-     *
-     * @return Collection
-     */
-    protected function getPropertiesFromResource($model, $attribute): Collection
-    {
-        $fields = $this->getFieldsFromResource($model, $attribute);
-
-        return $this->getPropertiesFromFields($fields)
-            ->keyBy('attribute');
     }
 
     /**
@@ -489,7 +512,7 @@ class NovaInlineRelationship extends Field
      */
     protected function getFieldsFromResource($model, $attribute): Collection
     {
-        $resource = ! empty($this->resourceClass)
+        $resource = !empty($this->resourceClass)
             ? new $this->resourceClass($model)
             : Nova::newResourceFromModel($model->{$attribute}()->getRelated());
 
@@ -499,7 +522,6 @@ class NovaInlineRelationship extends Field
                     $field instanceof ResourceToolElement ||
                     $field->attribute === 'ComputedField' ||
                     ($field instanceof ID && $field->attribute === $resource->resource->getKeyName()) ||
-                    collect(class_uses($field))->contains(ResolvesReverseRelation::class) ||
                     $field instanceof self;
             });
     }
@@ -547,54 +569,6 @@ class NovaInlineRelationship extends Field
     }
 
     /**
-     * Generate response object for a child resource by passing request to each field
-     *
-     * @param NovaRequest $request
-     * @param $response
-     * @param Collection $properties
-     *
-     * @return Model[]
-     */
-    protected function getResourceResponse(NovaRequest $request, $response, Collection $properties): array
-    {
-        return collect($response)->mapWithKeys(function ($itemData, $weight) use ($properties, $request) {
-            $item = $itemData['values'];
-            $modelId = $itemData['modelId'];
-
-            $fields = collect($item)->map(function ($value, $key) use ($properties, $request, $item) {
-                if ($properties->has($key)) {
-                    $field = $this->getResourceField($properties->get($key), $key);
-                    $newRequest = $this->getDuplicateRequest($request, $item);
-
-                    return $this->getValueFromField($field, $newRequest, $key)
-                        ?? ($field instanceof File) && ! empty($value)
-                            ? $value
-                            : null;
-                }
-
-                return $value;
-            })->all();
-
-            if (! empty($this->sortUsing)) {
-                $fields[$this->sortUsing] = $weight;
-            }
-
-            $modelClass = $this->resourceClass::$model;
-
-            if ($modelId) {
-                /** @var StoryContent $model */
-                $model = $modelClass::find($modelId);
-                $model->fill($fields);
-            } else {
-                $modelObj = new $modelClass();
-                $model = $modelObj->newInstance($fields);
-            }
-
-            return [$weight => $model];
-        })->all();
-    }
-
-    /**
      * save model attribute to a static array
      *
      * @param Model $model
@@ -605,7 +579,7 @@ class NovaInlineRelationship extends Field
     {
         $modelClass = get_class($model);
 
-        if (! array_key_exists($modelClass, static::$observedModels)) {
+        if (!array_key_exists($modelClass, static::$observedModels)) {
             $model::observe(NovaInlineRelationshipObserver::class);
             $model->updated_at = Carbon::now();
         }

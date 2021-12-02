@@ -21,7 +21,7 @@
                     :model-id="items.modelId"
                     :model-key="field.modelKey"
                     :value="items.fields"
-                    :errors="errorList"
+                    :errors="items.errors"
                     :field="field"
                     @deleted="removeItem(index)"
                 />
@@ -63,18 +63,55 @@ export default {
         return {
             id: 0,
             items: [],
-            errorList: new Errors()
         }
     },
 
     watch: {
         errors: function (errors) {
-            let errObj = errors.errors.hasOwnProperty(this.field.attribute) ? JSON.parse(errors.errors[this.field.attribute][0]) : {};
-            Object.keys(errObj).forEach(key=>{
-                errObj[key.replace('.values.', '.').replace(/\.(\d+)?\./g , '_$1_')] = errObj[key];
-                delete errObj[key];
+            let errObj = {};
+            try {
+                errObj = errors.errors.hasOwnProperty(this.field.attribute)
+                    ? JSON.parse(errors.errors[this.field.attribute][0])
+                    : {};
+            } catch (e) {
+
+            }
+
+            let childErrors = {};
+            let that = this;
+
+            Object.keys(errObj).forEach(function (key) {
+                let keyParts = key.split('.');
+
+                if (keyParts[0] === that.field.attribute) {
+                    let refId = keyParts[1];
+                    let fieldAttribute = keyParts.slice(2).join('.');
+
+                    if (!childErrors[refId]) {
+                        childErrors[refId] = {};
+                    }
+
+                    childErrors[refId][fieldAttribute] = errObj[key];
+                    // hack for media fields
+                    let hackAttribute = fieldAttribute;
+
+                    if (hackAttribute.indexOf('.') !== -1) {
+                        hackAttribute = hackAttribute.replace('.', `?${refId}.`);
+                    } else {
+                        hackAttribute += `.?${refId}`;
+                    }
+
+                    childErrors[refId][hackAttribute] = errObj[key];
+                }
             });
-            this.errorList =  new Errors(errObj);
+
+            Object.keys(this.items).forEach(function (key) {
+               if (childErrors[key]) {
+                   that.items[key]['errors'] = new Errors(childErrors[key]);
+               } else {
+                   that.items[key]['errors'] = new Errors({});
+               }
+            });
         },
     },
 
@@ -94,7 +131,8 @@ export default {
                 return {
                     'id': this.getNextId(),
                     'modelId': this.field.models[index],
-                    'fields': item
+                    'fields': item,
+                    'errors': new Errors(),
                 }
             });
 
@@ -106,7 +144,8 @@ export default {
                 this.items.push({
                     'id': this.getNextId(),
                     'modelId': 0,
-                    'fields': {...this.field.settings}
+                    'fields': {...this.field.settings},
+                    'errors': new Errors(),
                 });
             }
         },
@@ -157,7 +196,8 @@ export default {
             value.push({
                 'id': this.getNextId(),
                 'modelId': 0,
-                'fields': {...this.field.settings}
+                'fields': {...this.field.settings},
+                'errors': new Errors(),
             });
             this.handleChange(value);
         },
