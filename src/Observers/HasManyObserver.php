@@ -42,5 +42,7 @@ class HasManyObserver extends BaseObserver
                 call_user_func($callback);
             }
         }
+
+        $value->callbacks = [];
     }
 }
