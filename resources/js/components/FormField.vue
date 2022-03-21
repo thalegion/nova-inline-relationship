@@ -92,6 +92,11 @@ export default {
                     }
 
                     childErrors[refId][fieldAttribute] = errObj[key];
+
+                    if (fieldAttribute.includes('values.')) {
+                        childErrors[refId][fieldAttribute.replace('values.', '')] = errObj[key];
+                    }
+
                     // hack for media fields
                     let hackAttribute = fieldAttribute;
 
@@ -102,6 +107,10 @@ export default {
                     }
 
                     childErrors[refId][hackAttribute] = errObj[key];
+
+                    if (hackAttribute.includes('values.')) {
+                        childErrors[refId][hackAttribute.replace('values.', '')] = errObj[key];
+                    }
                 }
             });
 
