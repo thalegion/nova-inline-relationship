@@ -408,44 +408,39 @@ class NovaInlineRelationship extends Field
                     $baseRequest->replace($item['values']);
 
                     $fields
-                        ->filter(fn($field) => !$field instanceof Media)
-                        ->each(function ($field) use ($baseRequest, $relatedModel, $observableData) {
-                            $result = $field->fill($baseRequest, $relatedModel);
+                        ->each(function ($field) use ($request, $requestAttribute, $baseRequest, $relatedModel, $observableData, $order) {
+                            if ($field instanceof Media) {
+                                $itemMedias = $request['__media__.' . $requestAttribute . '.' . $order . '.' . $field->attribute] ?? [];
 
-                            if (is_callable($result)) {
-                                $observableData->callbacks[] = $result;
+                                $baseRequest->merge(['__media__' => [$field->attribute => $itemMedias]]);
+
+                                try {
+                                    $observableData->callbacks[] = $field->fill($baseRequest, $relatedModel);
+                                } catch (ValidationException $exception) {
+                                    $newMessages = [];
+                                    $messageBag = $exception->validator->getMessageBag();
+
+                                    foreach (
+                                        $exception->validator->getMessageBag()->getMessages() as $messageKey => $message
+                                    ) {
+                                        $messageBag->add(
+                                            $requestAttribute,
+                                            json_encode([$requestAttribute . '.' . $order . '.' . $messageKey => $message]
+                                            )
+                                        );
+                                    }
+
+                                    throw $exception;
+                                }
+                            } else {
+                                $result = $field->fill($baseRequest, $relatedModel);
+
+                                if (is_callable($result)) {
+                                    $observableData->callbacks[] = $result;
+                                }
                             }
                         });
                 }
-
-                $fields
-                    ->filter(fn($field) => $field instanceof Media)
-                    ->each(function ($field) use ($request, $requestAttribute, $baseRequest, $observableData) {
-                        foreach ($observableData->items as $itemKey => $item) {
-                            $itemMedias = $request['__media__.' . $requestAttribute . '.' . $itemKey . '.' . $field->attribute] ?? [];
-
-                            $baseRequest->replace(['__media__' => [$field->attribute => $itemMedias]]);
-
-                            try {
-                                $observableData->callbacks[] = $field->fill($baseRequest, $item);
-                            } catch (ValidationException $exception) {
-                                $newMessages = [];
-                                $messageBag = $exception->validator->getMessageBag();
-
-                                foreach (
-                                    $exception->validator->getMessageBag()->getMessages() as $messageKey => $message
-                                ) {
-                                    $messageBag->add(
-                                        $requestAttribute,
-                                        json_encode([$requestAttribute . '.' . $itemKey . '.' . $messageKey => $message]
-                                        )
-                                    );
-                                }
-
-                                throw $exception;
-                            }
-                        }
-                    });
             }
 
             if ($model instanceof Model) {
